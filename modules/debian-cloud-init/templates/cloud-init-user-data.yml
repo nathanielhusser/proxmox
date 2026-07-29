@@ -1,0 +1,149 @@
+#cloud-config
+# Debian Cloud-Init Configuration
+# This template prevents split brain issues and ensures unique system identity
+
+# System configuration
+hostname: ${vm_hostname}
+preserve_hostname: false
+manage_etc_hosts: true
+
+# User configuration
+users:
+  - name: ${username}
+    groups: sudo,adm,dialout,cdrom,floppy,audio,dip,video,plugdev,netdev
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    ssh_authorized_keys:
+      - ${ssh_key}
+    lock_passwd: false
+
+# Set password using chpasswd (plain text)
+chpasswd:
+  list: |
+    ${username}:${password}
+  expire: false
+
+# Security and system hardening
+ssh_pwauth: true
+disable_root: false
+ssh_deletekeys: true
+ssh_genkeytypes: ['rsa', 'ecdsa', 'ed25519']
+
+# Package management
+package_update: true
+package_upgrade: true
+package_reboot_if_required: true
+
+packages:
+  - qemu-guest-agent
+  - openssh-server
+  - curl
+  - wget
+  - vim
+  - htop
+  - net-tools
+  - dnsutils
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - sudo
+%{ if length(custom_packages) > 0 ~}
+%{ for package in custom_packages ~}
+  - ${package}
+%{ endfor ~}
+%{ endif ~}
+
+# System services
+runcmd:
+  # Ensure unique machine ID (prevents split brain issues)
+  - rm -f /etc/machine-id
+  - systemd-machine-id-setup
+  - systemctl restart systemd-networkd
+
+  # Enable and start essential services
+  - systemctl enable qemu-guest-agent
+  - systemctl start qemu-guest-agent
+  - systemctl enable ssh
+  - systemctl start ssh
+
+  # Regenerate SSH host keys for unique identity
+  - rm -rf /etc/ssh/ssh_host_*
+  - ssh-keygen -A
+  - systemctl restart ssh
+
+  # Clear any existing DHCP leases to prevent IP conflicts
+  - rm -f /var/lib/dhcp/dhclient.*
+  - rm -f /var/lib/dhclient/*
+
+  # Clear cloud-init logs for template
+  - cloud-init clean --logs
+%{ if length(custom_runcmd) > 0 ~}
+
+  # Custom commands
+%{ for cmd in custom_runcmd ~}
+  - ${cmd}
+%{ endfor ~}
+%{ endif ~}
+
+# Network configuration to prevent IP conflicts
+write_files:
+  - path: /etc/systemd/network/10-dhcp.network
+    content: |
+      [Match]
+      Name=en*
+
+      [Network]
+      DHCP=yes
+      IPForward=no
+
+      [DHCP]
+      UseHostname=true
+      ClientIdentifier=mac
+      SendHostname=true
+    permissions: '0644'
+    owner: root:root
+
+  - path: /etc/dhcp/dhclient.conf
+    content: |
+      # Prevent DHCP conflicts by using MAC-based client ID
+      send dhcp-client-identifier = hardware;
+
+      # Hostname configuration
+      send host-name = gethostname();
+
+      # Request specific options
+      request subnet-mask, broadcast-address, time-offset, routers,
+              domain-name, domain-name-servers, domain-search, host-name,
+              dhcp6.name-servers, dhcp6.domain-search, dhcp6.fqdn, dhcp6.sntp-servers,
+              netbios-name-servers, netbios-scope, interface-mtu,
+              rfc3442-classless-static-routes, ntp-servers;
+    permissions: '0644'
+    owner: root:root
+
+  - path: /etc/systemd/system/prevent-duplicate-ip.service
+    content: |
+      [Unit]
+      Description=Prevent duplicate IP addresses
+      After=network.target
+      Before=multi-user.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/bash -c 'sleep 5; systemctl restart systemd-networkd'
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+    permissions: '0644'
+    owner: root:root
+
+# Final system cleanup and preparation
+final_message: |
+  Debian Cloud-Init configuration complete for ${vm_hostname}.
+  System is ready with unique identity preservation.
+
+  Features configured:
+  - Unique machine ID generation
+  - SSH host key regeneration
+  - DHCP client ID based on MAC address
+  - Essential packages installed

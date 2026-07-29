@@ -1,0 +1,66 @@
+# Example usage of the debian-cloud-init module
+# This module uses var.instance_username and var.instance_password
+# from your root terraform.tfvars file
+
+# ============================================
+# Option 1: Use existing SSH key from root
+# ============================================
+module "web_server" {
+  source = "./modules/debian-cloud-init"
+
+  machine_name      = "web-server"
+  vm_id             = 200
+  instance_username = var.instance_username
+  instance_password = var.instance_password
+
+  # Use existing SSH key resource
+  create_ssh_key = false
+  ssh_public_key = trimspace(tls_private_key.cloud_init_key.public_key_openssh)
+
+  node           = "pve3"
+  cpu_cores      = 2
+  memory         = 2048
+  custom_packages = ["nginx"]
+}
+
+# ============================================
+# Option 2: Create new SSH key for this VM
+# ============================================
+module "db_server" {
+  source = "./modules/debian-cloud-init"
+
+  machine_name      = "db-server"
+  vm_id             = 201
+  instance_username = var.instance_username
+  instance_password = var.instance_password
+
+  # Create a new SSH key pair for this VM
+  create_ssh_key = true
+  # ssh_public_key not needed when create_ssh_key = true
+
+  node            = "pve3"
+  cpu_cores       = 4
+  memory          = 8192
+  custom_packages = ["postgresql"]
+}
+
+# ============================================
+# Outputs
+# ============================================
+
+# Get the generated private key (save this to connect)
+output "db_server_private_key" {
+  value     = module.db_server.ssh_private_key
+  sensitive = true
+}
+
+# Save private key to file
+resource "local_file" "db_server_key" {
+  content         = module.db_server.ssh_private_key
+  filename        = "${path.module}/keys/db-server.pem"
+  file_permission = "0600"
+}
+
+output "web_server_ip" {
+  value = module.web_server.ipv4_addresses
+}

@@ -272,7 +272,7 @@ resource "proxmox_virtual_environment_vm" "debian_backup" {
   }
 
   memory {
-    dedicated = 2048
+    dedicated = 4096
   }
 
   operating_system {
@@ -491,3 +491,97 @@ resource "proxmox_virtual_environment_vm" "debian_code" {
     type = "l26"
   }
 }
+
+resource "proxmox_virtual_environment_vm" "photos_debian" {
+  name        = "Debian-Photos"
+  description = "Managed by Terraform"
+  tags        = ["terraform", "debian", "photos", "vm"]
+
+  node_name     = "pve3"
+  vm_id         = 311
+  scsi_hardware = "virtio-scsi-single"
+  agent {
+    enabled = true
+    type    = "virtio"
+  }
+
+  clone {
+    vm_id = proxmox_virtual_environment_vm.debian_cloud_template.id
+    full  = true
+  }
+
+  stop_on_destroy = true
+
+  cpu {
+    cores   = 2
+    sockets = 1
+    type    = "x86-64-v2-AES"
+  }
+
+  memory {
+    dedicated = 4096
+  }
+
+  network_device {
+    bridge = "vmbr0"
+    # mac_address = "46:FB:F2:BC:20:14"
+    model    = "virtio"
+    firewall = true
+  }
+
+  operating_system {
+    type = "l26"
+  }
+
+  serial_device {
+    device = "socket"
+  }
+
+  disk {
+    datastore_id = "nfs-backups"
+    interface    = "scsi0"
+    size         = 64
+  }
+  initialization {
+    datastore_id      = "nfs-backups"
+    user_data_file_id = proxmox_virtual_environment_file.photos_user_data.id
+
+    ip_config {
+      ipv4 {
+        address = "dhcp"
+      }
+    }
+
+    user_account {
+      keys     = [trimspace(tls_private_key.cloud_init_key.public_key_openssh)]
+      password = var.instance_password
+      username = var.instance_username
+    }
+  }
+  # cdrom {
+  #   file_id = proxmox_virtual_environment_download_file.debian_13.id
+  #   enabled = true
+  # }
+  lifecycle {
+    ignore_changes = [cdrom]
+  }
+}
+
+# Custom cloud-init for photos VM with correct hostname
+resource "proxmox_virtual_environment_file" "photos_user_data" {
+  content_type = "snippets"
+  datastore_id = "nfs-backups"
+  node_name    = "pve3"
+
+  source_raw {
+    data = templatefile("${path.module}/cloud-init/cloud-init-user-data.yml", {
+      username        = var.instance_username
+      password        = var.instance_password
+      ssh_key         = trimspace(tls_private_key.cloud_init_key.public_key_openssh)
+      vm_hostname     = "Debian-Photos"
+      custom_packages = []
+    })
+    file_name = "photos-user-data.yml"
+  }
+}
+

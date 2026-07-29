@@ -1,0 +1,69 @@
+#cloud-config
+# Web Server specific cloud-init configuration
+
+hostname: ${vm_name}
+preserve_hostname: false
+manage_etc_hosts: true
+
+users:
+  - name: ${username}
+    groups: sudo,adm,dialout,cdrom,floppy,audio,dip,video,plugdev,netdev,www-data
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    ssh_authorized_keys:
+      - ${ssh_key}
+    lock_passwd: false
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - nginx
+  - certbot
+  - python3-certbot-nginx
+  - ufw
+  - fail2ban
+
+runcmd:
+  # Ensure unique identity
+  - rm -f /etc/machine-id
+  - systemd-machine-id-setup
+
+  # Configure nginx
+  - systemctl enable nginx
+  - systemctl start nginx
+
+  # Configure firewall for web server
+  - ufw allow 'Nginx Full'
+  - ufw allow ssh
+  - ufw --force enable
+
+  # Configure fail2ban
+  - systemctl enable fail2ban
+  - systemctl start fail2ban
+
+  # Set unique hostname
+  - hostnamectl set-hostname "${vm_name}"
+
+write_files:
+  - path: /var/www/html/index.html
+    content: |
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <title>Welcome to ${vm_name}</title>
+      </head>
+      <body>
+          <h1>Welcome to ${vm_name}</h1>
+          <p>This web server was deployed using Proxmox Cloud-Init template.</p>
+          <p>Server ID: $(cat /etc/machine-id)</p>
+      </body>
+      </html>
+    permissions: '0644'
+    owner: www-data:www-data
+
+final_message: |
+  Web server ${vm_name} is ready!
+  - Nginx is running on port 80
+  - Firewall configured for web traffic
+  - Fail2ban active for SSH protection

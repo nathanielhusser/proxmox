@@ -25,9 +25,10 @@ provider "proxmox" {
   # tmp_dir  = "/var/tmp"
 
   ssh {
-    agent = true
+    agent = false
     # TODO: uncomment and configure if using api_token instead of password
-    # username = "terraform"
+    username = "root"
+    password = "Natnat888"
   }
 }
 
