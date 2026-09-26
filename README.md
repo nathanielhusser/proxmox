@@ -26,6 +26,7 @@ The infrastructure is deployed across multiple Proxmox nodes:
 | Debian-File | pve3 | 117 | File server | Debian | 2 cores, 2GB RAM |
 | Elive-Syncthing | pve3 | 114 | File synchronization | Elive Linux | 2 cores, 2GB RAM |
 | Debian-Code | pve3 | 106 | Development environment | Debian | 4 cores, 4GB RAM |
+| HAOS-HomeAssistant | pve2 | 313 | Home Assistant | HAOS 18.1 | 2 cores, 4GB RAM |
 
 ### LXC Containers
 | Name | Node | VM ID | Purpose | Storage | Memory |
@@ -53,6 +54,7 @@ The infrastructure is deployed across multiple Proxmox nodes:
 1. **Terraform** (>= 0.15)
 2. **Proxmox VE cluster** with API access
 3. **AWS credentials** for S3 backend (optional)
+4. **`curl` and `xz-utils` (`unxz`)** installed on the machine running `terraform apply` — required by `haos_vm.tf`, which downloads and decompresses the Home Assistant OS image locally via a `local-exec` provisioner before uploading it to Proxmox
 
 ### Setup
 
@@ -98,8 +100,10 @@ The infrastructure is deployed across multiple Proxmox nodes:
 ├── vm.tf                   # Virtual machine definitions
 ├── lxc.tf                  # LXC container definitions
 ├── isos.tf                 # ISO download resources
+├── haos_vm.tf              # Home Assistant OS VM (fetches/decompresses qcow2.xz, uploads, defines VM)
 ├── vm_status.tf            # VM status data sources
 ├── outputs.tf              # Output definitions
+├── images/                 # Local cache of downloaded/decompressed VM images (git-ignored)
 ├── import_commands.sh      # Helper script for importing existing resources
 └── install_postgresql.sh   # PostgreSQL installation script
 ```
@@ -122,6 +126,10 @@ The infrastructure is deployed across multiple Proxmox nodes:
 - Automatically generated SSH key pairs for VMs/containers
 - Firewall configuration for network interfaces where applicable
 - Template-based deployments for consistency
+
+### Home Assistant OS (HAOS)
+- Defined in `haos_vm.tf`. Since HAOS is only published as a `.qcow2.xz` and the `bpg/proxmox` provider's `download_file` resource can't decompress `xz`, a `null_resource`/`local-exec` step downloads and decompresses it locally into `images/` before it's uploaded to Proxmox.
+- `disk[0].file_id` is intentionally in `lifecycle.ignore_changes`, so bumping the `haos_version` local later will download a new image but will **not** swap the running VM's disk automatically — the appliance disk holds both the OS and all persistent HA config, so routine updates should go through HAOS's own Supervisor/OTA updater, not a Terraform-driven disk replace. To fully re-image (destructive — back up HA config first), bump `haos_version` and run `terraform apply -replace=proxmox_virtual_environment_vm.haos`.
 
 ## 🛠️ Management Scripts
 

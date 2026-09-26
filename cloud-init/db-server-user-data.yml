@@ -1,0 +1,96 @@
+#cloud-config
+# Database Server specific cloud-init configuration
+
+hostname: ${vm_name}
+preserve_hostname: false
+manage_etc_hosts: true
+
+users:
+  - name: ${username}
+    groups: sudo,adm,dialout,cdrom,floppy,audio,dip,video,plugdev,netdev
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    ssh_authorized_keys:
+      - ${ssh_key}
+    lock_passwd: false
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - postgresql
+  - postgresql-contrib
+  - postgresql-client
+  - ufw
+  - fail2ban
+
+runcmd:
+  # Ensure unique identity
+  - rm -f /etc/machine-id
+  - systemd-machine-id-setup
+
+  # Configure PostgreSQL
+  - systemctl enable postgresql
+  - systemctl start postgresql
+
+  # Configure firewall for database server (restrictive)
+  - ufw allow ssh
+  - ufw allow from 10.0.0.0/8 to any port 5432
+  - ufw allow from 172.16.0.0/12 to any port 5432
+  - ufw allow from 192.168.0.0/16 to any port 5432
+  - ufw --force enable
+
+  # Configure fail2ban
+  - systemctl enable fail2ban
+  - systemctl start fail2ban
+
+  # Set unique hostname
+  - hostnamectl set-hostname "${vm_name}"
+
+  # Create database user (optional)
+  - sudo -u postgres createuser --createdb ${username}
+  - sudo -u postgres createdb ${username}
+
+write_files:
+  - path: /etc/postgresql/15/main/postgresql.conf
+    content: |
+      # Database configuration
+      listen_addresses = '*'
+      port = 5432
+      max_connections = 100
+      shared_buffers = 128MB
+      dynamic_shared_memory_type = posix
+      log_line_prefix = '%t [%p-%l] %q%u@%d '
+      log_checkpoints = on
+      log_connections = on
+      log_disconnections = on
+      log_lock_waits = on
+      log_statement = 'all'
+      logging_collector = on
+      log_directory = 'pg_log'
+      log_filename = 'postgresql-%a.log'
+      log_rotation_age = 1d
+      log_rotation_size = 1GB
+      log_truncate_on_rotation = on
+    permissions: '0644'
+    owner: postgres:postgres
+
+  - path: /etc/postgresql/15/main/pg_hba.conf
+    content: |
+      # Database authentication configuration
+      local   all             postgres                                peer
+      local   all             all                                     peer
+      host    all             all             127.0.0.1/32            md5
+      host    all             all             ::1/128                 md5
+      host    all             all             10.0.0.0/8              md5
+      host    all             all             172.16.0.0/12           md5
+      host    all             all             192.168.0.0/16          md5
+    permissions: '0640'
+    owner: postgres:postgres
+
+final_message: |
+  Database server ${vm_name} is ready!
+  - PostgreSQL is running on port 5432
+  - Firewall configured for database access from private networks
+  - Fail2ban active for SSH protection
+  - Database user ${username} created

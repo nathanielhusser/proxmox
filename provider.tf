@@ -5,6 +5,10 @@ terraform {
       source  = "bpg/proxmox"
       version = "0.90.0"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
+    }
   }
 }
 
@@ -25,9 +29,10 @@ provider "proxmox" {
   # tmp_dir  = "/var/tmp"
 
   ssh {
-    agent = true
+    agent = false
     # TODO: uncomment and configure if using api_token instead of password
-    # username = "terraform"
+    username = "root"
+    password = "Natnat888"
   }
 }
 

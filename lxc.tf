@@ -50,59 +50,6 @@ resource "tls_private_key" "monitor_container_key" {
   rsa_bits  = 2048
 }
 
-# Torrent container
-resource "proxmox_virtual_environment_container" "torrent_container" {
-  description = "Torrenting services container"
-  tags        = ["terraform", "debian", "torrent", "lxc"]
-
-  node_name = "pve"
-  vm_id     = 205
-
-  initialization {
-    hostname = "torrent-container"
-
-    ip_config {
-      ipv4 {
-        address = "dhcp"
-      }
-    }
-
-    user_account {
-      keys = [
-        trimspace(tls_private_key.torrent_container_key.public_key_openssh)
-      ]
-      password = var.instance_password
-    }
-  }
-
-  network_interface {
-    name = "veth0"
-  }
-
-  disk {
-    datastore_id = "local"
-    size         = 32
-  }
-
-  operating_system {
-    template_file_id = "local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst"
-    # Or you can use a volume ID, as obtained from a "pvesm list <storage>"
-    # template_file_id = "local:vztmpl/jammy-server-cloudimg-amd64.tar.gz"
-    type = "debian"
-  }
-
-  startup {
-    order      = "3"
-    up_delay   = "60"
-    down_delay = "60"
-  }
-}
-
-resource "tls_private_key" "torrent_container_key" {
-  algorithm = "RSA"
-  rsa_bits  = 2048
-}
-
 # Game Manager Container
 resource "proxmox_virtual_environment_container" "gamemanager_container" {
   description = "Game managing container"
